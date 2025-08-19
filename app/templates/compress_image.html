@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Compress Images</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-slate-800">
+  <div class="max-w-4xl mx-auto px-4 py-12">
+    <header class="mb-10">
+      <a href="/" class="inline-flex items-center text-slate-600 hover:text-slate-800 mb-4">
+        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+        </svg>
+        Back to tools
+      </a>
+      <h1 class="text-3xl font-bold tracking-tight">Compress Images</h1>
+      <p class="text-slate-600 mt-2">Compress and resize images. Supports HEIC, JPG, PNG, WebP and more.</p>
+    </header>
+
+    <form id="compressForm" method="POST" action="/compress-image" enctype="multipart/form-data" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-8">
+      
+      <!-- File Upload Area -->
+      <div class="mb-8">
+        <label class="block text-sm font-medium text-slate-700 mb-2">
+          Upload Images
+        </label>
+        <div id="dropZone" class="relative border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-blue-400 transition-colors">
+          <input 
+            type="file" 
+            name="image_files" 
+            id="imageFiles" 
+            multiple 
+            accept="image/*,.heic,.heif"
+            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          />
+          <svg class="mx-auto h-12 w-12 text-slate-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+          </svg>
+          <p class="text-sm text-slate-600">Drop images here or click to browse</p>
+          <p class="text-xs text-slate-500 mt-1">Supports HEIC, JPG, PNG, WebP, BMP, TIFF</p>
+        </div>
+        <div id="fileList" class="mt-4 space-y-2"></div>
+      </div>
+
+      <!-- Compression Mode -->
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-slate-700 mb-2">
+          Compression Mode
+        </label>
+        <div class="grid grid-cols-4 gap-2 mb-4">
+          <button type="button" class="preset-btn px-3 py-2 border border-slate-300 rounded-lg text-sm hover:bg-blue-50 hover:border-blue-400" data-quality="20">
+            Tiny<br><span class="text-xs text-slate-500">~20%</span>
+          </button>
+          <button type="button" class="preset-btn px-3 py-2 border border-slate-300 rounded-lg text-sm hover:bg-blue-50 hover:border-blue-400" data-quality="40">
+            Small<br><span class="text-xs text-slate-500">~40%</span>
+          </button>
+          <button type="button" class="preset-btn px-3 py-2 border border-blue-400 bg-blue-50 rounded-lg text-sm" data-quality="75">
+            Balanced<br><span class="text-xs text-slate-500">~75%</span>
+          </button>
+          <button type="button" class="preset-btn px-3 py-2 border border-slate-300 rounded-lg text-sm hover:bg-blue-50 hover:border-blue-400" data-quality="92">
+            Quality<br><span class="text-xs text-slate-500">~92%</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Quality Slider -->
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-slate-700 mb-2">
+          Fine-tune Quality: <span id="qualityValue" class="text-blue-600 font-semibold">75</span>%
+          <span id="qualityHint" class="text-xs text-slate-500 ml-2">(Balanced compression)</span>
+        </label>
+        <input 
+          type="range" 
+          name="quality" 
+          id="quality" 
+          min="1" 
+          max="100" 
+          value="75"
+          class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+        />
+        <div class="flex justify-between text-xs text-slate-500 mt-1">
+          <span>Maximum compression</span>
+          <span>Maximum quality</span>
+        </div>
+      </div>
+
+      <!-- Resize Options -->
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-slate-700 mb-2">
+          Resize Options (Optional)
+        </label>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-slate-600 mb-1">Max Width (px)</label>
+            <input 
+              type="number" 
+              name="max_width" 
+              placeholder="e.g. 1920"
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-600 mb-1">Max Height (px)</label>
+            <input 
+              type="number" 
+              name="max_height" 
+              placeholder="e.g. 1080"
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 mt-2">Images will be resized proportionally if larger than specified dimensions</p>
+      </div>
+
+      <!-- Output Format -->
+      <div class="mb-8">
+        <label class="block text-sm font-medium text-slate-700 mb-2">
+          Output Format
+        </label>
+        <select 
+          name="output_format" 
+          class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="original" selected>Keep Original Format</option>
+          <option value="jpeg">JPEG (Best for photos)</option>
+          <option value="png">PNG (Best for graphics)</option>
+          <option value="webp">WebP (Modern format, smaller size)</option>
+        </select>
+      </div>
+
+      <!-- Submit Button -->
+      <button 
+        type="submit" 
+        id="submitBtn"
+        disabled
+        class="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium disabled:bg-slate-300 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+      >
+        Compress Images
+      </button>
+
+      <!-- Progress Message -->
+      <div id="progressMessage" class="hidden mt-4 text-center text-slate-600">
+        <svg class="inline-block animate-spin h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        Compressing images...
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('imageFiles');
+    const fileList = document.getElementById('fileList');
+    const submitBtn = document.getElementById('submitBtn');
+    const qualitySlider = document.getElementById('quality');
+    const qualityValue = document.getElementById('qualityValue');
+    const qualityHint = document.getElementById('qualityHint');
+    const progressMessage = document.getElementById('progressMessage');
+    const form = document.getElementById('compressForm');
+    const presetBtns = document.querySelectorAll('.preset-btn');
+
+    let selectedFiles = [];
+
+    // Quality slider update
+    qualitySlider.addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      qualityValue.textContent = value;
+      updateQualityHint(value);
+      updatePresetButtons(value);
+    });
+
+    // Preset buttons
+    presetBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const quality = parseInt(btn.dataset.quality);
+        qualitySlider.value = quality;
+        qualityValue.textContent = quality;
+        updateQualityHint(quality);
+        updatePresetButtons(quality);
+      });
+    });
+
+    function updateQualityHint(value) {
+      let hint = '';
+      if (value <= 20) {
+        hint = '(Maximum compression, visible quality loss)';
+      } else if (value <= 40) {
+        hint = '(High compression, some quality loss)';
+      } else if (value <= 60) {
+        hint = '(Good compression, minimal quality loss)';
+      } else if (value <= 80) {
+        hint = '(Balanced compression)';
+      } else if (value <= 92) {
+        hint = '(Light compression, high quality)';
+      } else {
+        hint = '(Minimal compression, best quality)';
+      }
+      qualityHint.textContent = hint;
+    }
+
+    function updatePresetButtons(value) {
+      presetBtns.forEach(btn => {
+        const presetValue = parseInt(btn.dataset.quality);
+        if (Math.abs(presetValue - value) < 10) {
+          btn.classList.add('border-blue-400', 'bg-blue-50');
+          btn.classList.remove('border-slate-300');
+        } else {
+          btn.classList.remove('border-blue-400', 'bg-blue-50');
+          btn.classList.add('border-slate-300');
+        }
+      });
+    }
+
+    // Drag and drop
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('border-blue-400', 'bg-blue-50');
+    });
+
+    dropZone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+      handleFiles(e.dataTransfer.files);
+    });
+
+    // File input change
+    fileInput.addEventListener('change', (e) => {
+      handleFiles(e.target.files);
+    });
+
+    function handleFiles(files) {
+      selectedFiles = Array.from(files);
+      updateFileList();
+      submitBtn.disabled = selectedFiles.length === 0;
+    }
+
+    function updateFileList() {
+      fileList.innerHTML = '';
+      selectedFiles.forEach((file, index) => {
+        const fileSize = (file.size / 1024 / 1024).toFixed(2);
+        const fileItem = document.createElement('div');
+        fileItem.className = 'flex items-center justify-between p-3 bg-slate-50 rounded-lg';
+        fileItem.innerHTML = `
+          <div class="flex items-center">
+            <svg class="w-5 h-5 text-slate-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            <div>
+              <p class="text-sm font-medium text-slate-700">${file.name}</p>
+              <p class="text-xs text-slate-500">${fileSize} MB</p>
+            </div>
+          </div>
+          <button type="button" onclick="removeFile(${index})" class="text-red-500 hover:text-red-700">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        `;
+        fileList.appendChild(fileItem);
+      });
+    }
+
+    function removeFile(index) {
+      selectedFiles.splice(index, 1);
+      updateFileList();
+      submitBtn.disabled = selectedFiles.length === 0;
+      
+      // Update file input
+      const dt = new DataTransfer();
+      selectedFiles.forEach(file => dt.items.add(file));
+      fileInput.files = dt.files;
+    }
+
+    // Form submission
+    form.addEventListener('submit', (e) => {
+      // Prevent submission if no files selected
+      if (selectedFiles.length === 0) {
+        e.preventDefault();
+        alert('Please select at least one image file');
+        return;
+      }
+      
+      // Create a new FormData with the selected files
+      e.preventDefault();
+      const formData = new FormData();
+      
+      // Add all selected files
+      selectedFiles.forEach(file => {
+        formData.append('image_files', file);
+      });
+      
+      // Add other form fields
+      formData.append('quality', document.getElementById('quality').value);
+      const maxWidth = document.querySelector('input[name="max_width"]').value;
+      const maxHeight = document.querySelector('input[name="max_height"]').value;
+      if (maxWidth) formData.append('max_width', maxWidth);
+      if (maxHeight) formData.append('max_height', maxHeight);
+      formData.append('output_format', document.querySelector('select[name="output_format"]').value);
+      
+      // Submit the form
+      submitBtn.disabled = true;
+      progressMessage.classList.remove('hidden');
+      
+      fetch('/compress-image', {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => {
+        if (!response.ok) {
+          return response.json().then(err => Promise.reject(err));
+        }
+        // Get filename from Content-Disposition header or use default
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'compressed_image.jpg';
+        if (contentDisposition) {
+          const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+          if (matches != null && matches[1]) {
+            filename = matches[1].replace(/['"]/g, '');
+          }
+        }
+        return response.blob().then(blob => ({ blob, filename }));
+      })
+      .then(({ blob, filename }) => {
+        // Download the file
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        // Reset form
+        selectedFiles = [];
+        updateFileList();
+        fileInput.value = '';
+        submitBtn.disabled = true;
+        progressMessage.classList.add('hidden');
+      })
+      .catch(error => {
+        console.error('Compression error:', error);
+        if (error && error.detail) {
+          alert('Error: ' + error.detail);
+        } else if (typeof error === 'string') {
+          alert('Error: ' + error);
+        } else {
+          alert('An error occurred while compressing the images. Check the console for details.');
+        }
+        submitBtn.disabled = false;
+        progressMessage.classList.add('hidden');
+      });
+    });
+  </script>
+</body>
+</html>

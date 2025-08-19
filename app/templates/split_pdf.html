@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Split PDF</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-slate-800">
+  <div class="max-w-3xl mx-auto px-4 py-10">
+    <header class="mb-8">
+      <a href="/" class="text-sm text-blue-700 hover:underline">← Back</a>
+      <h1 class="text-3xl font-bold tracking-tight mt-2">Split PDF</h1>
+      <p class="text-slate-600 mt-2">Export each page to its own PDF, or extract a specific page range.</p>
+    </header>
+
+    <form id="split-form" class="space-y-6" enctype="multipart/form-data">
+      <div id="dropzone" class="border-2 border-dashed border-slate-300 rounded-xl p-8 bg-white shadow-sm transition">
+        <div class="flex items-center justify-center flex-col gap-4 text-center">
+          <div class="w-16 h-16 rounded-full bg-rose-50 flex items-center justify-center text-3xl">✂️</div>
+          <div>
+            <p class="font-medium">Drag & drop your PDF here</p>
+            <p class="text-sm text-slate-500">or click to choose a file</p>
+          </div>
+          <input id="pdf_file" name="pdf_file" type="file" accept="application/pdf,.pdf" class="hidden" required />
+          <button type="button" id="choose-btn" class="px-4 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition">Choose PDF</button>
+          <p id="file-name" class="text-sm text-slate-600"></p>
+        </div>
+      </div>
+
+      <div class="rounded-xl bg-white ring-1 ring-slate-200 p-4 space-y-3">
+        <label class="inline-flex items-center gap-2 text-sm">
+          <input id="split_all_pages" name="split_all_pages" type="checkbox" class="rounded border-slate-300 text-rose-600 focus:ring-rose-500" />
+          Split each page into its own PDF
+        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium mb-1" for="start_page">Start page</label>
+            <input id="start_page" name="start_page" type="number" min="1" class="w-full rounded-lg border-slate-300 focus:ring-rose-500 focus:border-rose-500" placeholder="1" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1" for="end_page">End page</label>
+            <input id="end_page" name="end_page" type="number" min="1" class="w-full rounded-lg border-slate-300 focus:ring-rose-500 focus:border-rose-500" placeholder="e.g. 5" />
+          </div>
+        </div>
+        <p class="text-xs text-slate-500">If "Split each page" is on, start/end are ignored.</p>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="split-btn" type="submit" class="px-5 py-2.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-60 disabled:cursor-not-allowed transition">Split</button>
+        <div id="spinner" class="hidden flex items-center gap-2 text-sm text-slate-600">
+          <svg class="animate-spin h-5 w-5 text-rose-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+          <span>Splitting…</span>
+        </div>
+      </div>
+
+      <p id="message" class="text-sm"></p>
+    </form>
+  </div>
+
+  <script>
+    const dropzone = document.getElementById('dropzone');
+    const chooseBtn = document.getElementById('choose-btn');
+    const pdfInput = document.getElementById('pdf_file');
+    const fileName = document.getElementById('file-name');
+    const form = document.getElementById('split-form');
+    const splitBtn = document.getElementById('split-btn');
+    const spinner = document.getElementById('spinner');
+    const message = document.getElementById('message');
+
+    function setMessage(text, isError=false) {
+      message.textContent = text;
+      message.className = 'text-sm ' + (isError ? 'text-red-600' : 'text-green-600');
+    }
+    function showSpinner(show) {
+      spinner.classList.toggle('hidden', !show);
+      splitBtn.disabled = show;
+    }
+
+    chooseBtn.addEventListener('click', () => pdfInput.click());
+    pdfInput.addEventListener('change', () => { fileName.textContent = pdfInput.files[0] ? pdfInput.files[0].name : ''; });
+
+    ['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.add('ring-2','ring-rose-400','bg-rose-50/40'); }));
+    ['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('ring-2','ring-rose-400','bg-rose-50/40'); }));
+    dropzone.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length) {
+        const file = dt.files[0];
+        if (!file.name.toLowerCase().endsWith('.pdf')) { setMessage('Please drop a .pdf file.', true); return; }
+        pdfInput.files = dt.files; fileName.textContent = file.name;
+      }
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault(); setMessage('');
+      if (!pdfInput.files[0]) { setMessage('Please choose a PDF first.', true); return; }
+
+      const fd = new FormData(form);
+      showSpinner(true);
+      try {
+        const res = await fetch('/split', { method: 'POST', body: fd });
+        if (!res.ok) {
+          const maybeJson = await res.json().catch(() => null);
+          throw new Error(maybeJson?.detail || 'Split failed.');
+        }
+        const blob = await res.blob();
+        const cd = res.headers.get('Content-Disposition') || '';
+        const nameMatch = cd.match(/filename="?([^";]+)"?/i);
+        const suggestedName = nameMatch ? nameMatch[1] : 'split.zip';
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = suggestedName; document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url);
+        setMessage('Done! Your download should start.');
+      } catch (err) {
+        setMessage(err.message || 'Something went wrong.', true);
+      } finally { showSpinner(false); }
+    });
+  </script>
+</body>
+</html>

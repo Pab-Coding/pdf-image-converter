@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF → Word Converter</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="color-scheme" content="light dark" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📄%3C/text%3E%3C/svg%3E" />
+  <style>
+    .drag-active { border-color: rgb(59 130 246); background-color: rgb(239 246 255); }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-slate-800">
+  <div class="max-w-3xl mx-auto px-4 py-10">
+    <header class="mb-8 text-center">
+      <h1 class="text-3xl font-bold tracking-tight">PDF → Word Converter</h1>
+      <p class="text-slate-600 mt-2">Fast, accurate conversions from .pdf to .docx. Your files never leave this server.</p>
+    </header>
+
+    <form id="convert-form" class="space-y-6" enctype="multipart/form-data">
+      <div id="dropzone" class="border-2 border-dashed border-slate-300 rounded-xl p-8 bg-white shadow-sm transition">
+        <div class="flex items-center justify-center flex-col gap-4 text-center">
+          <div class="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center text-3xl">📄</div>
+          <div>
+            <p class="font-medium">Drag & drop your PDF here</p>
+            <p class="text-sm text-slate-500">or click to choose a file</p>
+          </div>
+          <input id="pdf_file" name="pdf_file" type="file" accept="application/pdf,.pdf" class="hidden" required />
+          <button type="button" id="choose-btn" class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition">Choose PDF</button>
+          <p id="file-name" class="text-sm text-slate-600"></p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="sm:col-span-1">
+          <label class="block text-sm font-medium mb-1" for="start_page">Start page (optional)</label>
+          <input id="start_page" name="start_page" type="number" min="1" class="w-full rounded-lg border-slate-300 focus:ring-blue-500 focus:border-blue-500" placeholder="1" />
+        </div>
+        <div class="sm:col-span-1">
+          <label class="block text-sm font-medium mb-1" for="end_page">End page (optional)</label>
+          <input id="end_page" name="end_page" type="number" min="1" class="w-full rounded-lg border-slate-300 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. 5" />
+        </div>
+        
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="convert-btn" type="submit" class="px-5 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition">Convert to .docx</button>
+        <div id="spinner" class="hidden flex items-center gap-2 text-sm text-slate-600">
+          <svg class="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+          <span>Converting…</span>
+        </div>
+      </div>
+
+      <p id="message" class="text-sm"></p>
+    </form>
+
+    <footer class="mt-10 text-center text-xs text-slate-500">Made with ❤️ using FastAPI & Tailwind</footer>
+  </div>
+
+  <script>
+    const dropzone = document.getElementById('dropzone');
+    const chooseBtn = document.getElementById('choose-btn');
+    const pdfInput = document.getElementById('pdf_file');
+    const fileName = document.getElementById('file-name');
+    const form = document.getElementById('convert-form');
+    const convertBtn = document.getElementById('convert-btn');
+    const spinner = document.getElementById('spinner');
+    const message = document.getElementById('message');
+
+    function setMessage(text, isError=false) {
+      message.textContent = text;
+      message.className = 'text-sm ' + (isError ? 'text-red-600' : 'text-green-600');
+    }
+
+    function showSpinner(show) {
+      spinner.classList.toggle('hidden', !show);
+      convertBtn.disabled = show;
+    }
+
+    // Click to choose
+    chooseBtn.addEventListener('click', () => pdfInput.click());
+
+    // Update file name
+    pdfInput.addEventListener('change', () => {
+      fileName.textContent = pdfInput.files[0] ? pdfInput.files[0].name : '';
+    });
+
+    // Drag & drop behaviors
+    ;['dragenter', 'dragover'].forEach(evt => dropzone.addEventListener(evt, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.add('drag-active','ring-2','ring-blue-400','bg-blue-50/40');
+    }));
+    ;['dragleave', 'drop'].forEach(evt => dropzone.addEventListener(evt, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.remove('drag-active','ring-2','ring-blue-400','bg-blue-50/40');
+    }));
+    dropzone.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length) {
+        const file = dt.files[0];
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+          setMessage('Please drop a .pdf file.', true);
+          return;
+        }
+        pdfInput.files = dt.files;
+        fileName.textContent = file.name;
+      }
+    });
+
+    // Submit with fetch and trigger download
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      message.textContent = '';
+
+      if (!pdfInput.files[0]) {
+        setMessage('Please choose a PDF file first.', true);
+        return;
+      }
+
+      const fd = new FormData(form);
+      showSpinner(true);
+      try {
+        const res = await fetch('/convert', { method: 'POST', body: fd });
+        if (!res.ok) {
+          const maybeJson = await res.json().catch(() => null);
+          const errorMsg = maybeJson?.detail || 'Conversion failed.';
+          throw new Error(errorMsg);
+        }
+        const blob = await res.blob();
+        const contentDisposition = res.headers.get('Content-Disposition') || '';
+        const nameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+        const suggestedName = nameMatch ? nameMatch[1] : (pdfInput.files[0].name.replace(/\.pdf$/i, '') + '.docx');
+
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = suggestedName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        setMessage('Done! Your download should begin shortly.');
+      } catch (err) {
+        setMessage(err.message || 'Something went wrong.', true);
+      } finally {
+        showSpinner(false);
+      }
+    });
+  </script>
+</body>
+</html>

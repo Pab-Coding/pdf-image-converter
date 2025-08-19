@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Merge PDFs</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-slate-800">
+  <div class="max-w-3xl mx-auto px-4 py-10">
+    <header class="mb-8">
+      <a href="/" class="text-sm text-blue-700 hover:underline">← Back</a>
+      <h1 class="text-3xl font-bold tracking-tight mt-2">Merge PDFs</h1>
+      <p class="text-slate-600 mt-2">Upload two or more PDFs; we'll merge them in the order selected.</p>
+    </header>
+
+    <form id="merge-form" class="space-y-6" enctype="multipart/form-data">
+      <div id="dropzone" class="border-2 border-dashed border-slate-300 rounded-xl p-6 bg-white shadow-sm transition">
+        <div class="flex items-center justify-center flex-col gap-3 text-center">
+          <div class="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center text-3xl">➕</div>
+          <div>
+            <p class="font-medium">Drag & drop your PDFs here</p>
+            <p class="text-sm text-slate-500">or click to add files, then drag to reorder</p>
+          </div>
+          <input id="filePicker" type="file" accept="application/pdf,.pdf" class="hidden" multiple />
+          <button type="button" id="choose-btn" class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition">Add PDFs</button>
+        </div>
+      </div>
+
+      <div class="rounded-xl bg-white ring-1 ring-slate-200 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-sm font-semibold text-slate-700">Selected files</h2>
+          <button type="button" id="clear-btn" class="text-xs text-slate-500 hover:text-slate-700">Clear</button>
+        </div>
+        <ul id="file-list" class="divide-y divide-slate-100"></ul>
+        <p id="empty-hint" class="text-xs text-slate-500 mt-2">No files yet. Add or drop some PDFs above.</p>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="sm:col-span-2">
+          <label class="block text-sm font-medium mb-1" for="filename">Output filename (optional)</label>
+          <input id="filename" name="filename" type="text" placeholder="merged" class="w-full rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500" />
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="merge-btn" type="submit" class="px-5 py-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed transition">Merge</button>
+        <div id="spinner" class="hidden flex items-center gap-2 text-sm text-slate-600">
+          <svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+          <span>Merging…</span>
+        </div>
+      </div>
+
+      <p id="message" class="text-sm"></p>
+    </form>
+  </div>
+
+  <script>
+    const dropzone = document.getElementById('dropzone');
+    const chooseBtn = document.getElementById('choose-btn');
+    const filePicker = document.getElementById('filePicker');
+    const fileListEl = document.getElementById('file-list');
+    const clearBtn = document.getElementById('clear-btn');
+    const emptyHint = document.getElementById('empty-hint');
+    const form = document.getElementById('merge-form');
+    const mergeBtn = document.getElementById('merge-btn');
+    const spinner = document.getElementById('spinner');
+    const message = document.getElementById('message');
+
+    let selectedFiles = []; // [{id, file}]
+    let dragId = null;
+
+    function setMessage(text, isError=false) {
+      message.textContent = text;
+      message.className = 'text-sm ' + (isError ? 'text-red-600' : 'text-green-600');
+    }
+    function showSpinner(show) {
+      spinner.classList.toggle('hidden', !show);
+      mergeBtn.disabled = show;
+    }
+    function renderList() {
+      fileListEl.innerHTML = '';
+      emptyHint.classList.toggle('hidden', selectedFiles.length > 0);
+      selectedFiles.forEach((item) => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center justify-between py-2 gap-3';
+        li.draggable = true;
+        li.dataset.id = item.id;
+        li.innerHTML = `
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="cursor-move select-none text-slate-400">☰</span>
+            <span class="truncate">${item.file.name}</span>
+          </div>
+          <button type="button" class="text-xs text-slate-500 hover:text-rose-600 remove-btn">Remove</button>
+        `;
+        li.addEventListener('dragstart', (e) => { dragId = item.id; li.classList.add('opacity-60'); e.dataTransfer.effectAllowed = 'move'; });
+        li.addEventListener('dragend', () => { dragId = null; li.classList.remove('opacity-60'); });
+        li.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; li.classList.add('bg-indigo-50'); });
+        li.addEventListener('dragleave', () => { li.classList.remove('bg-indigo-50'); });
+        li.addEventListener('drop', (e) => {
+          e.preventDefault(); li.classList.remove('bg-indigo-50');
+          if (!dragId || dragId === item.id) return;
+          const fromIdx = selectedFiles.findIndex(it => it.id === dragId);
+          const toIdx = selectedFiles.findIndex(it => it.id === item.id);
+          const [moved] = selectedFiles.splice(fromIdx, 1);
+          selectedFiles.splice(toIdx, 0, moved);
+          renderList();
+        });
+        li.querySelector('.remove-btn').addEventListener('click', () => {
+          selectedFiles = selectedFiles.filter(it => it.id !== item.id);
+          renderList();
+        });
+        fileListEl.appendChild(li);
+      });
+    }
+    function addFiles(files) {
+      const valid = Array.from(files).filter(f => /\.pdf$/i.test(f.name));
+      if (!valid.length) { setMessage('Please add PDF files.', true); return; }
+      valid.forEach((f) => selectedFiles.push({ id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, file: f }));
+      renderList();
+    }
+
+    chooseBtn.addEventListener('click', () => filePicker.click());
+    filePicker.addEventListener('change', (e) => { addFiles(e.target.files); filePicker.value = ''; });
+    clearBtn.addEventListener('click', () => { selectedFiles = []; renderList(); });
+
+    ['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.add('ring-2','ring-indigo-400','bg-indigo-50/40'); }));
+    ['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('ring-2','ring-indigo-400','bg-indigo-50/40'); }));
+    dropzone.addEventListener('drop', (e) => { const dt = e.dataTransfer; if (!dt || !dt.files || !dt.files.length) return; addFiles(dt.files); });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault(); setMessage('');
+      if (selectedFiles.length < 2) { setMessage('Please add at least two PDFs.', true); return; }
+
+      const fd = new FormData();
+      const outName = document.getElementById('filename').value.trim();
+      if (outName) fd.append('filename', outName);
+      selectedFiles.forEach(({file}) => fd.append('pdfs', file, file.name));
+
+      showSpinner(true);
+      try {
+        const res = await fetch('/merge', { method: 'POST', body: fd });
+        if (!res.ok) {
+          const maybeJson = await res.json().catch(() => null);
+          throw new Error(maybeJson?.detail || 'Merge failed.');
+        }
+        const blob = await res.blob();
+        const cd = res.headers.get('Content-Disposition') || '';
+        const nameMatch = cd.match(/filename="?([^";]+)"?/i);
+        const suggestedName = nameMatch ? nameMatch[1] : 'merged.pdf';
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = suggestedName; document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url);
+        setMessage('Done! Your download should start.');
+      } catch (err) {
+        setMessage(err.message || 'Something went wrong.', true);
+      } finally { showSpinner(false); }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tools</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-slate-800">
+  <div class="max-w-4xl mx-auto px-4 py-12">
+    <header class="mb-10 text-center">
+      <h1 class="text-3xl font-bold tracking-tight">Choose a tool</h1>
+      <p class="text-slate-600 mt-2">Pick what you want to do with your PDF.</p>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <a href="/pdf-to-word" class="group block rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 hover:shadow-md transition">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-2xl">📝</div>
+          <div>
+            <h2 class="text-xl font-semibold">PDF → Word</h2>
+            <p class="text-slate-600 text-sm">Convert your PDF into a .docx document.</p>
+          </div>
+        </div>
+      </a>
+
+      <a href="/pdf-to-image" class="group block rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 hover:shadow-md transition">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-2xl">🖼️</div>
+          <div>
+            <h2 class="text-xl font-semibold">PDF → Image</h2>
+            <p class="text-slate-600 text-sm">Export pages to PNG or JPG images.</p>
+          </div>
+        </div>
+      </a>
+
+      <a href="/image-to-pdf" class="group block rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 hover:shadow-md transition">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center text-2xl">📄</div>
+          <div>
+            <h2 class="text-xl font-semibold">Image → PDF</h2>
+            <p class="text-slate-600 text-sm">Merge PNG/JPG files into a single PDF.</p>
+          </div>
+        </div>
+      </a>
+
+      <a href="/flatten-pdf" class="group block rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 hover:shadow-md transition">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center text-2xl">🧱</div>
+          <div>
+            <h2 class="text-xl font-semibold">Flatten PDF</h2>
+            <p class="text-slate-600 text-sm">Rasterize pages to make content non-selectable.</p>
+          </div>
+        </div>
+      </a>
+
+      <a href="/merge-pdf" class="group block rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 hover:shadow-md transition">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-2xl">➕</div>
+          <div>
+            <h2 class="text-xl font-semibold">Merge PDFs</h2>
+            <p class="text-slate-600 text-sm">Combine multiple PDFs into one.</p>
+          </div>
+        </div>
+      </a>
+
+      <a href="/split-pdf" class="group block rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 hover:shadow-md transition">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-xl bg-rose-50 flex items-center justify-center text-2xl">✂️</div>
+          <div>
+            <h2 class="text-xl font-semibold">Split PDF</h2>
+            <p class="text-slate-600 text-sm">Split per page or extract a range.</p>
+          </div>
+        </div>
+      </a>
+
+      <a href="/reorder-pdf" class="group block rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 hover:shadow-md transition">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-xl bg-sky-50 flex items-center justify-center text-2xl">🔀</div>
+          <div>
+            <h2 class="text-xl font-semibold">Reorder/Delete Pages</h2>
+            <p class="text-slate-600 text-sm">Drag to reorder pages and remove unwanted ones.</p>
+          </div>
+        </div>
+      </a>
+
+      <a href="/compress-pdf" class="group block rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 hover:shadow-md transition">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-2xl">🗜️</div>
+          <div>
+            <h2 class="text-xl font-semibold">Compress PDF</h2>
+            <p class="text-slate-600 text-sm">Adjust quality and scaling to reduce size.</p>
+          </div>
+        </div>
+      </a>
+
+      <a href="/compress-image" class="group block rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 hover:shadow-md transition">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-xl bg-teal-50 flex items-center justify-center text-2xl">📸</div>
+          <div>
+            <h2 class="text-xl font-semibold">Compress Images</h2>
+            <p class="text-slate-600 text-sm">Compress and resize images. Supports HEIC, JPG, PNG.</p>
+          </div>
+        </div>
+      </a>
+    </div>
+  </div>
+</body>
+</html>

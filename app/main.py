@@ -1168,3 +1168,209 @@ async def compress_image(
     except Exception as e:
         _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Compression failed: {e}")
+
+
+# ---- Image Format Converter ----
+@app.get("/convert-image-format", response_class=HTMLResponse)
+async def convert_image_format_page(request: Request):
+    return templates.TemplateResponse("convert_image_format.html", {"request": request})
+
+
+@app.post("/convert-image-format")
+async def convert_image_format(
+    request: Request,
+    image_files: List[UploadFile] = File(..., description="Upload image files"),
+    output_format: str = Form(..., description="Target format"),
+    keep_transparency: bool = Form(True),
+    quality: int = Form(95, ge=1, le=100),
+):
+    if not image_files:
+        raise HTTPException(status_code=400, detail="Please upload at least one image file")
+    
+    # Validate output format
+    valid_formats = ['jpeg', 'jpg', 'png', 'webp', 'bmp', 'tiff', 'ico', 'gif']
+    output_format = output_format.lower()
+    if output_format not in valid_formats:
+        raise HTTPException(status_code=400, detail=f"Invalid output format. Supported: {', '.join(valid_formats)}")
+    
+    # Normalize format names
+    if output_format == 'jpg':
+        output_format = 'jpeg'
+    
+    temp_dir = _create_secure_temp_dir(prefix="convert_img")
+    converted_files = []
+    
+    # Debug logging
+    print(f"Converting {len(image_files)} files to {output_format.upper()}")
+    
+    try:
+        for image_file in image_files:
+            # Skip empty files
+            if not image_file.filename:
+                print(f"Skipping empty filename")
+                continue
+            
+            # Save uploaded file
+            input_path = os.path.join(temp_dir, image_file.filename)
+            print(f"Processing {image_file.filename}")
+            
+            with open(input_path, "wb") as f:
+                shutil.copyfileobj(image_file.file, f)
+            
+            try:
+                # Open the image
+                img = Image.open(input_path)
+                original_format = img.format if img.format else 'unknown'
+                print(f"Original format: {original_format}, converting to {output_format.upper()}")
+                
+                # Handle different format conversions
+                if output_format in ['jpeg', 'bmp']:
+                    # These formats don't support transparency
+                    if img.mode in ('RGBA', 'LA', 'P'):
+                        if img.mode == 'P':
+                            img = img.convert('RGBA')
+                        # Create white background
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        if img.mode == 'RGBA':
+                            background.paste(img, mask=img.split()[-1])
+                        else:
+                            background.paste(img)
+                        img = background
+                    elif img.mode not in ('RGB', 'L'):
+                        img = img.convert('RGB')
+                
+                elif output_format == 'png':
+                    # PNG supports transparency
+                    if not keep_transparency and img.mode == 'RGBA':
+                        # Convert to RGB if user doesn't want transparency
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        background.paste(img, mask=img.split()[-1])
+                        img = background
+                
+                elif output_format == 'webp':
+                    # WebP supports both transparency and lossy/lossless
+                    if not keep_transparency and img.mode == 'RGBA':
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        background.paste(img, mask=img.split()[-1])
+                        img = background
+                
+                elif output_format == 'ico':
+                    # ICO has size limitations
+                    if img.width > 256 or img.height > 256:
+                        img.thumbnail((256, 256), Image.Resampling.LANCZOS)
+                
+                elif output_format == 'tiff':
+                    # TIFF supports various modes
+                    pass  # Keep original mode
+                
+                elif output_format == 'gif':
+                    # GIF needs special handling for animations and palette
+                    if img.mode != 'P':
+                        img = img.convert('P', palette=Image.ADAPTIVE, colors=256)
+                
+                # Generate output filename
+                base_name = os.path.splitext(image_file.filename)[0]
+                safe_base_name = "".join(c if c.isalnum() or c in '-_' else '_' for c in base_name)
+                
+                # Determine file extension
+                if output_format == 'jpeg':
+                    ext = '.jpg'
+                elif output_format == 'tiff':
+                    ext = '.tiff'
+                else:
+                    ext = f'.{output_format}'
+                
+                output_filename = f"{safe_base_name}{ext}"
+                output_path = os.path.join(temp_dir, output_filename)
+                
+                # Save with appropriate settings
+                save_kwargs = {}
+                if output_format == 'jpeg':
+                    save_kwargs = {
+                        'format': 'JPEG',
+                        'quality': quality,
+                        'optimize': True,
+                        'progressive': True
+                    }
+                elif output_format == 'png':
+                    save_kwargs = {
+                        'format': 'PNG',
+                        'optimize': True,
+                        'compress_level': 6
+                    }
+                elif output_format == 'webp':
+                    save_kwargs = {
+                        'format': 'WEBP',
+                        'quality': quality,
+                        'method': 6,
+                        'lossless': quality >= 95
+                    }
+                elif output_format == 'tiff':
+                    save_kwargs = {
+                        'format': 'TIFF',
+                        'compression': 'tiff_lzw'
+                    }
+                elif output_format == 'bmp':
+                    save_kwargs = {'format': 'BMP'}
+                elif output_format == 'ico':
+                    save_kwargs = {'format': 'ICO'}
+                elif output_format == 'gif':
+                    save_kwargs = {
+                        'format': 'GIF',
+                        'optimize': True
+                    }
+                
+                img.save(output_path, **save_kwargs)
+                converted_files.append(output_path)
+                
+                # Log conversion success
+                new_size = os.path.getsize(output_path)
+                original_size = os.path.getsize(input_path)
+                print(f"Converted {image_file.filename}: {original_size/1024:.1f}KB -> {new_size/1024:.1f}KB")
+                
+            except Exception as e:
+                print(f"Error converting {image_file.filename}: {e}")
+                import traceback
+                print(traceback.format_exc())
+                continue
+        
+        if not converted_files:
+            _secure_cleanup_directory(temp_dir)
+            raise HTTPException(status_code=400, detail="No images could be converted")
+        
+        # Return single file or zip
+        if len(converted_files) == 1:
+            single_file = converted_files[0]
+            
+            def _cleanup_single():
+                _secure_cleanup_directory(temp_dir)
+            
+            return FileResponse(
+                single_file,
+                media_type="application/octet-stream",
+                filename=os.path.basename(single_file),
+                background=BackgroundTask(_cleanup_single),
+            )
+        else:
+            # Create zip file
+            zip_path = os.path.join(temp_dir, f"converted_images_{output_format}.zip")
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for file_path in converted_files:
+                    zf.write(file_path, arcname=os.path.basename(file_path))
+            
+            def _cleanup_zip():
+                _secure_cleanup_directory(temp_dir)
+            
+            return FileResponse(
+                zip_path,
+                media_type="application/zip",
+                filename=os.path.basename(zip_path),
+                background=BackgroundTask(_cleanup_zip),
+            )
+            
+    except HTTPException:
+        _secure_cleanup_directory(temp_dir)
+        raise
+    except Exception as e:
+        _secure_cleanup_directory(temp_dir)
+        raise HTTPException(status_code=500, detail=f"Conversion failed: {e}")

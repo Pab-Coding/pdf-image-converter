@@ -3,6 +3,8 @@ import shutil
 import tempfile
 import uuid
 from typing import Optional, List, Dict
+import secrets
+import stat
 
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
@@ -36,14 +38,73 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 REORDER_SESSIONS: Dict[str, str] = {}
 
 
-def _cleanup_files(*paths: str) -> None:
-    for path in paths:
+def _secure_delete_file(filepath: str) -> None:
+    """Securely delete a file by overwriting it with random data before removal."""
+    if not filepath or not os.path.exists(filepath):
+        return
+    
+    try:
+        # Get file size
+        filesize = os.path.getsize(filepath)
+        
+        # Overwrite file with random data
+        with open(filepath, "ba+", buffering=0) as f:
+            # Overwrite with random bytes
+            f.seek(0)
+            f.write(secrets.token_bytes(filesize))
+            f.flush()
+            os.fsync(f.fileno())  # Force write to disk
+        
+        # Remove the file
+        os.remove(filepath)
+    except Exception:
+        # If secure deletion fails, try normal deletion
         try:
-            if path and os.path.exists(path):
-                os.remove(path)
+            os.remove(filepath)
         except Exception:
-            # Best-effort cleanup; ignore failures
             pass
+
+
+def _cleanup_files(*paths: str) -> None:
+    """Cleanup files with secure deletion."""
+    for path in paths:
+        _secure_delete_file(path)
+
+
+def _secure_cleanup_directory(directory: str) -> None:
+    """Securely delete all files in a directory and remove it."""
+    if not directory or not os.path.exists(directory):
+        return
+    
+    try:
+        # Securely delete all files in directory
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                _secure_delete_file(os.path.join(root, file))
+        
+        # Remove the directory
+        shutil.rmtree(directory, ignore_errors=True)
+    except Exception:
+        # Fallback to regular removal
+        try:
+            shutil.rmtree(directory, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def _create_secure_temp_dir(prefix: str = "secure") -> str:
+    """Create a secure temporary directory with restricted permissions."""
+    # Add random UUID to prevent directory name prediction
+    secure_prefix = f"{prefix}_{uuid.uuid4().hex[:8]}_{secrets.token_hex(4)}_"
+    temp_dir = tempfile.mkdtemp(prefix=secure_prefix)
+    
+    # Set restrictive permissions (owner read/write/execute only)
+    try:
+        os.chmod(temp_dir, stat.S_IRWXU)  # 700 permissions
+    except Exception:
+        pass  # Permission setting might fail on some systems
+    
+    return temp_dir
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -68,14 +129,14 @@ async def convert_pdf_to_docx(
         raise HTTPException(status_code=400, detail="Please upload a .pdf file")
 
     # Save upload to a temp file
-    temp_dir = tempfile.mkdtemp(prefix="pdf2docx_")
+    temp_dir = _create_secure_temp_dir(prefix="pdf2docx")
     input_pdf_path = os.path.join(temp_dir, pdf_file.filename)
     try:
         with open(input_pdf_path, "wb") as f:
             shutil.copyfileobj(pdf_file.file, f)
     except Exception as e:
         _cleanup_files(input_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {e}")
 
     # Prepare output path
@@ -95,7 +156,7 @@ async def convert_pdf_to_docx(
             converter.close()
     except Exception as e:
         _cleanup_files(input_pdf_path, output_docx_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Conversion failed: {e}")
 
     # Return the file and cleanup afterwards
@@ -103,7 +164,7 @@ async def convert_pdf_to_docx(
 
     def _cleanup_all():
         _cleanup_files(input_pdf_path, output_docx_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
 
     return FileResponse(
         output_docx_path,
@@ -139,14 +200,14 @@ async def convert_pdf_to_images(
 
     dots_per_inch = dpi if dpi and dpi > 0 else 200
 
-    temp_dir = tempfile.mkdtemp(prefix="pdf2img_")
+    temp_dir = _create_secure_temp_dir(prefix="pdf2img")
     input_pdf_path = os.path.join(temp_dir, pdf_file.filename)
     try:
         with open(input_pdf_path, "wb") as f:
             shutil.copyfileobj(pdf_file.file, f)
     except Exception as e:
         _cleanup_files(input_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {e}")
 
     # Open PDF and render pages
@@ -154,7 +215,7 @@ async def convert_pdf_to_images(
         doc = fitz.open(input_pdf_path)
     except Exception as e:
         _cleanup_files(input_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=400, detail=f"Invalid PDF: {e}")
 
     try:
@@ -208,7 +269,7 @@ async def convert_pdf_to_images(
         def _cleanup_single():
             for p in [input_pdf_path] + generated_files:
                 _cleanup_files(p)
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            _secure_cleanup_directory(temp_dir)
 
         media_type = "image/png" if img_path.lower().endswith(".png") else "image/jpeg"
         return FileResponse(
@@ -227,7 +288,7 @@ async def convert_pdf_to_images(
     def _cleanup_zip():
         for p in [input_pdf_path] + generated_files + [zip_path]:
             _cleanup_files(p)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
 
     return FileResponse(
         zip_path,
@@ -251,7 +312,7 @@ async def convert_images_to_pdf(
     if not images:
         raise HTTPException(status_code=400, detail="Please upload at least one image")
 
-    temp_dir = tempfile.mkdtemp(prefix="img2pdf_")
+    temp_dir = _create_secure_temp_dir(prefix="img2pdf")
     saved_paths: List[str] = []
     pil_images: List[Image.Image] = []
     try:
@@ -289,14 +350,14 @@ async def convert_images_to_pdf(
     except Exception as e:
         for p in saved_paths:
             _cleanup_files(p)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Failed to create PDF: {e}")
 
     def _cleanup_all():
         for p in saved_paths:
             _cleanup_files(p)
         _cleanup_files(output_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
 
     return FileResponse(
         output_pdf_path,
@@ -317,7 +378,7 @@ async def reorder_init(pdf_file: UploadFile = File(...)):
     if not pdf_file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Please upload a .pdf file")
 
-    temp_dir = tempfile.mkdtemp(prefix="reorder_")
+    temp_dir = _create_secure_temp_dir(prefix="reorder")
     input_pdf_path = os.path.join(temp_dir, pdf_file.filename)
     thumbs_dir = os.path.join(temp_dir, "thumbs")
     os.makedirs(thumbs_dir, exist_ok=True)
@@ -326,13 +387,13 @@ async def reorder_init(pdf_file: UploadFile = File(...)):
         with open(input_pdf_path, "wb") as f:
             shutil.copyfileobj(pdf_file.file, f)
     except Exception as e:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {e}")
 
     try:
         doc = fitz.open(input_pdf_path)
     except Exception as e:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=400, detail=f"Invalid PDF: {e}")
 
     try:
@@ -423,7 +484,7 @@ async def reorder_apply(request: Request):
 
     def _cleanup_all():
         try:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            _secure_cleanup_directory(temp_dir)
         finally:
             REORDER_SESSIONS.pop(token, None)
 
@@ -456,13 +517,13 @@ async def compress_pdf(
     quality = max(40, min(95, int(quality)))
     scale_percent = max(50, min(100, int(scale_percent)))
 
-    temp_dir = tempfile.mkdtemp(prefix="compress_")
+    temp_dir = _create_secure_temp_dir(prefix="compress")
     input_pdf_path = os.path.join(temp_dir, pdf_file.filename)
     try:
         with open(input_pdf_path, "wb") as f:
             shutil.copyfileobj(pdf_file.file, f)
     except Exception as e:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {e}")
 
     base = os.path.splitext(os.path.basename(pdf_file.filename))[0]
@@ -471,7 +532,7 @@ async def compress_pdf(
     try:
         doc = fitz.open(input_pdf_path)
     except Exception as e:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=400, detail=f"Invalid PDF: {e}")
 
     try:
@@ -547,7 +608,7 @@ async def compress_pdf(
     except Exception as e:
         # Ensure temp files are cleaned; close handled in finally
         _cleanup_files(input_pdf_path, output_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Compression failed: {e}")
     finally:
         try:
@@ -557,7 +618,7 @@ async def compress_pdf(
 
     def _cleanup_all():
         _cleanup_files(input_pdf_path, output_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
 
     return FileResponse(
         output_pdf_path,
@@ -583,21 +644,21 @@ async def flatten_pdf(
     if not pdf_file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Please upload a .pdf file")
 
-    temp_dir = tempfile.mkdtemp(prefix="flatten_")
+    temp_dir = _create_secure_temp_dir(prefix="flatten")
     input_pdf_path = os.path.join(temp_dir, pdf_file.filename)
     try:
         with open(input_pdf_path, "wb") as f:
             shutil.copyfileobj(pdf_file.file, f)
     except Exception as e:
         _cleanup_files(input_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {e}")
 
     try:
         src = fitz.open(input_pdf_path)
     except Exception as e:
         _cleanup_files(input_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=400, detail=f"Invalid PDF: {e}")
 
     base_name = os.path.splitext(os.path.basename(pdf_file.filename))[0]
@@ -637,14 +698,14 @@ async def flatten_pdf(
         except Exception:
             pass
         _cleanup_files(input_pdf_path, output_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Failed to flatten PDF: {e}")
     finally:
         src.close()
 
     def _cleanup_all():
         _cleanup_files(input_pdf_path, output_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
 
     return FileResponse(
         output_pdf_path,
@@ -669,7 +730,7 @@ async def merge_pdfs(
     if not pdfs or len(pdfs) < 2:
         raise HTTPException(status_code=400, detail="Please upload at least two PDF files to merge")
 
-    temp_dir = tempfile.mkdtemp(prefix="merge_")
+    temp_dir = _create_secure_temp_dir(prefix="merge")
     saved_paths: list[str] = []
     try:
         # Save inputs
@@ -695,14 +756,14 @@ async def merge_pdfs(
     except Exception as e:
         for p in saved_paths:
             _cleanup_files(p)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Failed to merge: {e}")
 
     def _cleanup_all():
         for p in saved_paths:
             _cleanup_files(p)
         _cleanup_files(output_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
 
     return FileResponse(
         output_pdf_path,
@@ -729,21 +790,21 @@ async def split_pdf(
     if not pdf_file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Please upload a .pdf file")
 
-    temp_dir = tempfile.mkdtemp(prefix="split_")
+    temp_dir = _create_secure_temp_dir(prefix="split")
     input_pdf_path = os.path.join(temp_dir, pdf_file.filename)
     try:
         with open(input_pdf_path, "wb") as f:
             shutil.copyfileobj(pdf_file.file, f)
     except Exception as e:
         _cleanup_files(input_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {e}")
 
     try:
         src = fitz.open(input_pdf_path)
     except Exception as e:
         _cleanup_files(input_pdf_path)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=400, detail=f"Invalid PDF: {e}")
 
     base = os.path.splitext(os.path.basename(pdf_file.filename))[0]
@@ -783,7 +844,7 @@ async def split_pdf(
         _cleanup_files(input_pdf_path)
         for p in outputs:
             _cleanup_files(p)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Failed to split: {e}")
     finally:
         src.close()
@@ -794,7 +855,7 @@ async def split_pdf(
 
         def _cleanup_single():
             _cleanup_files(input_pdf_path, single)
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            _secure_cleanup_directory(temp_dir)
 
         return FileResponse(
             single,
@@ -812,7 +873,7 @@ async def split_pdf(
         _cleanup_files(input_pdf_path, zip_path)
         for p in outputs:
             _cleanup_files(p)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
 
     return FileResponse(
         zip_path,
@@ -845,7 +906,7 @@ async def compress_image(
     for f in image_files:
         print(f"  - {f.filename} (content_type: {f.content_type}, size: {f.size if hasattr(f, 'size') else 'unknown'})")
     
-    temp_dir = tempfile.mkdtemp(prefix="compress_img_")
+    temp_dir = _create_secure_temp_dir(prefix="compress_img")
     compressed_files = []
     
     try:
@@ -1067,7 +1128,7 @@ async def compress_image(
                 continue
         
         if not compressed_files:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            _secure_cleanup_directory(temp_dir)
             raise HTTPException(status_code=400, detail="No images could be processed")
         
         # Return single file or zip
@@ -1075,7 +1136,7 @@ async def compress_image(
             single_file = compressed_files[0]
             
             def _cleanup_single():
-                shutil.rmtree(temp_dir, ignore_errors=True)
+                _secure_cleanup_directory(temp_dir)
             
             return FileResponse(
                 single_file,
@@ -1091,7 +1152,7 @@ async def compress_image(
                     zf.write(file_path, arcname=os.path.basename(file_path))
             
             def _cleanup_zip():
-                shutil.rmtree(temp_dir, ignore_errors=True)
+                _secure_cleanup_directory(temp_dir)
             
             return FileResponse(
                 zip_path,
@@ -1102,8 +1163,8 @@ async def compress_image(
             
     except HTTPException:
         # Re-raise HTTP exceptions as-is
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise
     except Exception as e:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _secure_cleanup_directory(temp_dir)
         raise HTTPException(status_code=500, detail=f"Compression failed: {e}")
